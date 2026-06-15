@@ -1,0 +1,31 @@
+# Python cache files
+__pycache__/
+*.pyc
+
+# Jupyter temporary folders
+.ipynb_checkpoints/
+
+# Local Git history backup from clean restart
+.git_backup_before_clean_restart/
+
+# Virtual environments
+.venv/
+venv/
+
+# macOS system files
+.DS_Store
+
+# Temporary Word files
+~$*
+
+# Raw and generated data
+data/raw/*
+data/results/*
+
+# Generated analysis outputs in the project root
+tracks_*.csv
+tracks_*.mp4
+
+# Keep folder placeholders
+!data/raw/.gitkeep
+!data/results/.gitkeep

@@ -1,0 +1,489 @@
+TRACKING NOTEBOOK REPORT
+File: track1st_Version_9Jun.ipynb
+Date: 9 June version
+
+
+1. Goal of the notebook
+-----------------------
+
+The goal of this notebook is to build a transparent first tracking pipeline for cells detected in a short video.
+
+The pipeline does four main things:
+
+1. Detect cells in each video frame.
+2. Link detections frame-to-frame to create tracks.
+3. Use velocity autocorrelation (VAC) to prefer smooth directional motion.
+4. Detect and merge broken track segments using jump detection.
+
+The notebook keeps the process scientifically transparent by storing intermediate tables:
+
+- detections: all detected cells before tracking
+- links: accepted frame-to-frame links
+- tracks: initial tracks after frame-to-frame linking
+- selected_jmp_links: high-confidence proposed broken-track joins
+- tracks_merged: final tracks after merging selected broken segments
+
+
+2. Detection stage
+------------------
+
+The detection stage starts by reading the video and extracting basic metadata:
+
+- frame count
+- frames per second
+- image width
+- image height
+
+The function get_video_data(path) opens the video, reads this metadata, and returns the first frame for testing.
+
+Cell detection is done by detect_cells_in_frame(...). The function follows this logic:
+
+1. Convert the video frame to grayscale.
+2. Estimate a smooth illumination background with a Gaussian filter.
+3. Subtract the grayscale frame from the background so dark cells become bright.
+4. Threshold the corrected image using Otsu thresholding.
+5. Apply binary closing to connect small separated regions of the same cell.
+6. Label connected objects.
+7. Measure object properties with regionprops.
+8. Keep only objects within the chosen area range.
+
+For each accepted object, the notebook stores:
+
+- frame
+- label
+- centroid position in pixels: x_px, y_px
+- centroid position in micrometers: x_um, y_um
+- area in pixels and micrometers squared
+- mean intensity
+- threshold value
+- eccentricity
+- orientation
+- major axis length
+- minor axis length
+
+The result is the detections table.
+
+
+3. Initial linking idea
+-----------------------
+
+The first version of linking was based on minimum distance between detections in consecutive frames.
+
+The simple physical assumption is:
+
+fps = 25
+v_cell = 100 um/s
+
+This gives a strict frame-to-frame displacement:
+
+100 / 25 = 4 um per frame
+
+However, observed instantaneous velocity and centroid noise suggested that 4 um was too strict. The current tracking uses:
+
+max_distance_um = 5.2
+
+This corresponds to:
+
+5.2 um/frame * 25 frames/s = 130 um/s
+
+This is an empirical tolerance. It is slightly above the expected biological speed and helps reduce fragmentation caused by centroid noise or small detection instability.
+
+
+4. Velocity autocorrelation function
+------------------------------------
+
+The notebook defines calculate_vac(p0, p1, p2).
+
+This function compares two consecutive movement vectors:
+
+v1 = p1 - p0
+v2 = p2 - p1
+
+The velocity autocorrelation is:
+
+VAC = dot(v1, v2) / (|v1| * |v2|)
+
+Interpretation:
+
+- VAC close to 1: movement continues in the same direction
+- VAC close to 0: movement direction is unrelated or perpendicular
+- VAC close to -1: movement reverses direction
+
+The normalization is important because it removes speed magnitude and keeps direction similarity. This means VAC measures directional consistency, not how fast the cell moved.
+
+VAC needs three positions:
+
+p0 -> p1 -> p2
+
+Therefore, the first link of a new track cannot have a VAC score yet.
+
+
+5. Frame-to-frame tracking logic
+--------------------------------
+
+The notebook starts by assigning one new track to each detection in the first frame.
+
+Then it processes the video frame by frame.
+
+For each current frame:
+
+1. A cKDTree is built from current-frame detection positions.
+2. For every active track, the last detection is used as the current endpoint.
+3. The cKDTree finds only candidate detections within max_distance_um.
+4. Each candidate link stores:
+   - track_id
+   - detection_a
+   - detection_b
+   - frame_a
+   - frame_b
+   - distance_um
+   - vac
+5. Candidate links are scored.
+6. The best non-conflicting links are accepted.
+7. Unassigned detections start new tracks.
+
+The score used is:
+
+score = distance_um - vac_weight_um * vac
+
+The current value is:
+
+vac_weight_um = 0.25
+
+This means distance remains the main factor, and VAC gives a small bonus for directionally smooth candidates.
+
+This is conservative. VAC helps choose between nearby candidates but should not overpower distance.
+
+
+6. Why cKDTree is used
+----------------------
+
+The earlier code checked every detection in the current frame against every active track. That becomes slow when there are many detections.
+
+cKDTree speeds this up by only returning detections within the allowed search radius:
+
+nearby_candidate_positions = current_tree.query_ball_point(p1, r=max_distance_um)
+
+This keeps the same scientific rule but reduces runtime.
+
+
+7. Diagnostic plots after initial linking
+-----------------------------------------
+
+The notebook uses several diagnostics after creating tracks:
+
+1. Track length distribution
+
+This shows whether tracks are mostly short or whether many tracks continue for a large part of the video.
+
+For a 10 second video at 25 fps, a full-length track can be around:
+
+10 * 25 = 250 frames
+
+2. Accepted link distances
+
+This shows how close accepted links are to max_distance_um.
+
+If many links pile up near the maximum, the distance threshold is strongly controlling the result.
+
+3. VAC distribution
+
+This shows whether accepted links are directionally smooth.
+
+A strong peak near 1 means many links continue the previous direction.
+
+4. Longest-track plots
+
+These are used for visual inspection. They show whether long tracks look smooth, fragmented, or wrongly connected.
+
+
+8. Current tracking result before merging
+-----------------------------------------
+
+The frame-to-frame VAC-based tracker produced many usable tracks, including long tracks near the full video length.
+
+However, visual inspection showed that some real trajectories were split into separate track segments.
+
+This happened because the main linker only connects:
+
+frame t -> frame t+1
+
+It does not allow a cell to disappear temporarily and reappear later.
+
+Therefore, a second stage was added: jump detection for broken tracks.
+
+
+9. Jump detection for broken tracks
+-----------------------------------
+
+Jump detection works at the track-segment level, not at the individual detection level.
+
+For each track, the notebook summarizes:
+
+- track_id
+- start_frame
+- end_frame
+- start_x_um
+- start_y_um
+- end_x_um
+- end_y_um
+- length
+
+Then it checks whether one track segment can reasonably continue into another.
+
+For a candidate pair:
+
+track A ends at frame t
+track B starts at a later frame
+
+The code calculates:
+
+jmp_frames = start_frame_B - end_frame_A
+jmp_distance_um = distance from end of A to start of B
+jmp_speed_um_s = jmp_distance_um / jmp_frames * fps
+jmp_vac = direction consistency from the end of A toward the start of B
+
+The current jump parameters are:
+
+max_jmp_frames = 3
+max_jmp_speed_um_s = 130
+max_jmp_distance_um = max_jmp_speed_um_s * max_jmp_frames / fps
+min_jmp_vac = 0.5
+min_segment_length = 20
+
+The dynamic distance rule is important:
+
+max_jmp_distance_um = max_jmp_speed_um_s * max_jmp_frames / fps
+
+This means the allowed jump distance scales with the number of missing frames.
+
+For example, with fps = 25, max_jmp_frames = 3, and max_jmp_speed_um_s = 130:
+
+130 * 3 / 25 = 15.6 um
+
+This is more scientifically consistent than using a fixed jump distance for all missing-frame intervals.
+
+
+10. Selecting jump links
+------------------------
+
+The notebook filters candidate jumps by:
+
+- jump duration
+- jump speed
+- jump VAC
+- minimum length of both track segments
+
+The selected links are stored in:
+
+selected_jmp_links
+
+Each selected link says:
+
+track_b should be merged into track_a
+
+where:
+
+- track_a is the earlier segment
+- track_b is the later segment
+
+Before merging, selected links should be plotted and inspected visually. This is important because larger jumps can accidentally connect the wrong cells in dense regions.
+
+
+11. Merging broken tracks
+-------------------------
+
+The notebook uses a parent-map method for merging.
+
+Important distinction:
+
+tracks is the original track table.
+track_parent is only a dictionary of merge instructions.
+tracks_merged is the repaired table after applying those merge instructions.
+
+At first:
+
+track_parent[track_id] = track_id
+
+Each track is its own parent.
+
+Then selected_jmp_links update the map:
+
+track_parent[parent_b] = parent_a
+
+This means:
+
+merge the later track segment into the earlier parent track.
+
+The merge is applied by:
+
+tracks_merged = tracks.copy()
+tracks_merged["original_track_id"] = tracks_merged["track_id"]
+tracks_merged["track_id"] = tracks_merged["track_id"].apply(lambda track_id: find_parent(int(track_id)))
+
+The original_track_id column is important. It preserves the pre-merge track ID so manual inspection remains possible.
+
+Renumbering is intentionally disabled during debugging. If track IDs are renumbered too early, old IDs disappear and manual inspection becomes confusing.
+
+
+12. Merge check result
+----------------------
+
+The current merge check showed:
+
+Detections before: 64093
+Detections after: 64093
+Tracks before: 4832
+Tracks after: 4786
+
+This means no detections were lost or duplicated.
+
+The number of tracks decreased by:
+
+4832 - 4786 = 46
+
+So 46 broken track segments were merged.
+
+Track length summary:
+
+Before merging:
+- count: 4832
+- mean: 13.264 frames
+- median: 3 frames
+- max: 255 frames
+
+After merging:
+- count: 4786
+- mean: 13.392 frames
+- median: 3 frames
+- max: 255 frames
+
+Interpretation:
+
+The merging step is conservative. It repaired some broken tracks but did not strongly change the dataset.
+
+This is a good result for a first transparent tracking version.
+
+
+13. Manual inspection logic
+---------------------------
+
+The notebook includes a manual inspection cell for two selected tracks.
+
+This cell checks two cases:
+
+1. Time overlap
+
+If two tracks exist in the same frames, they usually should not be merged as one broken track.
+
+The code calculates:
+
+overlap_frames
+overlap_distances
+
+If overlap exists, the distance between tracks during overlapping frames is measured.
+
+2. Jump from A to B
+
+If the tracks do not overlap, the code checks whether track A can jump to track B.
+
+It calculates:
+
+jmp_frames
+jmp_distance_um
+jmp_speed_um_s
+jmp_vac
+
+Decision rule:
+
+- If tracks overlap in time, usually do not merge.
+- If they do not overlap, merge only if jump duration, speed, distance, and VAC are reasonable.
+
+
+14. Important current issues to clean later
+-------------------------------------------
+
+1. Cells 1 and 2 contain unfinished triple-quoted strings.
+
+They are probably old scratch cells. They should be converted to markdown or removed later.
+
+2. Cell 16 mixes parameter definition and velocity diagnostics.
+
+For clarity, separate this into:
+
+- tracking parameters
+- linking code
+- velocity diagnostic test cell
+
+3. The import cell still imports distance_matrix and linear_sum_assignment.
+
+These are from the older distance-only version. The current tracker uses cKDTree.
+
+4. Renumbering should stay disabled during debugging.
+
+Only renumber final tracks when exporting final data.
+
+5. The jump parameters should be documented clearly.
+
+Especially:
+
+max_jmp_distance_um = max_jmp_speed_um_s * max_jmp_frames / fps
+
+6. Longer jumps must always be inspected visually.
+
+Increasing max_jmp_frames or lowering min_jmp_vac can repair more tracks, but it also increases the risk of wrong merges.
+
+
+15. Recommended next steps
+--------------------------
+
+1. Keep working on the 10 second video first.
+
+Do not move to a longer video until the current pipeline is validated.
+
+2. Recalculate instantaneous velocity on tracks_merged.
+
+This checks whether the final merged tracks contain biologically impossible jumps.
+
+3. Recalculate VAC on tracks_merged.
+
+This checks whether final trajectories remain directionally consistent.
+
+4. Plot the longest tracks after merging.
+
+Use both:
+
+- 100 longest tracks
+- tracks longer than 200 frames
+
+5. Inspect selected suspicious tracks manually.
+
+Use original_track_id to find old segments.
+
+6. Save the final merged tracks only after validation.
+
+Suggested final export:
+
+tracks_merged.to_csv("tracks_merged_9Jun.csv", index=False)
+
+7. Only then test a longer video.
+
+A longer video will increase runtime and make debugging harder, so it should come after the 10 second version is stable.
+
+
+16. Short summary
+-----------------
+
+This notebook now contains a first transparent tracking method:
+
+- cells are detected frame by frame
+- detections are linked using distance and velocity autocorrelation
+- cKDTree makes candidate search faster
+- broken tracks are detected using endpoint jumps
+- selected broken segments are merged conservatively
+- original track IDs are preserved for debugging
+
+The current result repaired 46 broken segments without changing the number of detections.
+
+The method is not final, but it is a strong first version for scientific validation.
+

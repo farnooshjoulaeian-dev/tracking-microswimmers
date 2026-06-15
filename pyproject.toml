@@ -1,0 +1,21 @@
+#pyproject.toml is useful because later someone can install your package with: pip install -e 
+[project]
+name = "trackfar"
+version = "0.1.0"
+description = "Python tools for tracking Chlamydomonas cells in microscopy videos."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "opencv-python",
+    "matplotlib",
+    "scikit-image",
+] #means the project depends on these Python packages.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
