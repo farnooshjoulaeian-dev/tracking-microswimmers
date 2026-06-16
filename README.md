@@ -18,6 +18,15 @@ The goal is to build a reproducible pipeline for:
 
 Project structure and video loading.
 
+## Example data
+
+A small example video is included for testing the pipeline:
+
+[data/example/example_microswimmers.mp4](data/example/example_microswimmers.mp4)
+
+Full raw microscopy videos are not included in this repository because of file
+size.
+
 ## License and reuse
 
 Copyright (c) 2026 Farnoosh Joulaeian. All rights reserved.
