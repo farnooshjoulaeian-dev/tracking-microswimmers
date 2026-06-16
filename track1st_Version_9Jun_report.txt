@@ -6,23 +6,22 @@ Date: 9 June version
 1. Goal of the notebook
 -----------------------
 
-The goal of this notebook is to build a transparent first tracking pipeline for cells detected in a video.
+The goal of this notebook is to build a transparent first tracking pipeline for cells detected in a microscopic video.
 
 The pipeline does four main things:
 
-1. Detect cells in each video frame.
-2. Link detections frame-to-frame to create tracks.
-3. Use direction persistency (DP) to avoid radical directional change in trajectory.
-4. Detect jumps in tracks and filtering by speed and distance of the jump and merge broken track segments using jump detection.
+1. Detect cells in each frame using background correction, thresholding, and size filtering.
+2. Link detections frame-to-frame to build initial trajectories.
+3. Use directional persistence (DP) to penalize abrupt changes in swimming direction.
+4. Identify short gaps between broken trajectory segments and merge them only when the jump distance, speed, and DP are physically reasonable.
 
-The notebook keeps the process scientifically transparent by storing intermediate tables:
+The notebook keeps the tracking process transparent by storing intermediate tables at each stage of the pipeline:
 
-- detections: all detected cells before tracking
-- links: accepted frame-to-frame links
-- tracks: initial tracks after frame-to-frame linking
-- selected_jmp_links: high-confidence proposed broken-track joins
-- tracks_merged: final tracks after merging selected broken segments
-
+- detections: all detected cells in every frame before tracking
+- tracks: trajectories obtained after initial frame-to-frame linking
+- track_summary: summary statistics and endpoints for each trajectory segment
+- selected_jmp_links: high-confidence candidate merges between broken trajectory segments
+- tracks_merged: final trajectories after applying the selected merges
 
 2. Detection stage
 ------------------
@@ -34,18 +33,18 @@ The detection stage starts by reading the video and extracting basic metadata:
 - image width
 - image height
 
-The function get_video_data(path) opens the video, reads this metadata, and returns the first frame for testing.
+The function get_video_data(path) uses OpenCV (cv2) to open the video, read its metadata, and return the first frame for testing.
 
-Cell detection is done by detect_cells_in_frame(...). The function follows this logic:
+Cell detection is performed by detect_cells_in_frame(...). The function follows the workflow below:
 
-1. Convert the video frame to grayscale.
-2. Estimate a smooth illumination background with a Gaussian filter.
-3. Subtract the grayscale frame from the background so dark cells become bright.
-4. Threshold the corrected image using Otsu thresholding.
-5. Apply binary closing to connect small separated regions of the same cell.
-6. Label connected objects.
-7. Measure object properties with regionprops.
-8. Keep only objects within the chosen area range.
+1. Convert the video frame to grayscale using OpenCV (cv2.cvtColor).
+2. Estimate a smooth illumination background using a Gaussian filter from SciPy (scipy.ndimage.gaussian_filter).
+3. Subtract the grayscale image from the estimated background so that dark cells appear bright.
+4. Apply Otsu thresholding using scikit-image (skimage.filters.threshold_otsu).
+5. Perform binary closing using SciPy (scipy.ndimage.binary_closing) to connect small fragmented regions.
+6. Label connected objects using scikit-image (skimage.measure.label).
+7. Measure object properties using scikit-image (skimage.measure.regionprops).
+8. Keep only objects whose area falls within the specified size range.
 
 For each accepted object, the notebook stores:
 
@@ -61,74 +60,88 @@ For each accepted object, the notebook stores:
 - major axis length
 - minor axis length
 
-The result is the detections table.
+The resulting detections are stored in the detections table.
 
 
-3. Initial linking idea
------------------------
+3. Initial linking strategy
+---------------------------
 
-The first version of linking was based on minimum distance between detections in consecutive frames.
+Trajectory reconstruction is performed by linking detections between consecutive frames.
 
-The simple physical assumption is:
+A simple physical estimate provides the maximum expected displacement between frames:
 
 fps = 25
-v_cell = 100 um/s
+v_cell ≈ 100 μm/s
 
-This gives a strict frame-to-frame displacement:
+This gives:
 
-100 / 25 = 4 um per frame
+100 / 25 = 4 μm per frame
 
-However, observed instantaneous velocity and centroid noise suggested that 4 um was too strict. The current tracking uses:
+as the expected displacement of a swimming cell.
+
+In practice, centroid localization noise, image segmentation variability, and small fluctuations in swimming speed can increase the apparent frame-to-frame displacement. To reduce unnecessary track fragmentation, the tracker uses:
 
 max_distance_um = 5.2
 
 This corresponds to:
 
-5.2 um/frame * 25 frames/s = 130 um/s
+5.2 μm/frame × 25 frames/s = 130 μm/s
 
-This is an empirical tolerance. It is slightly above the expected biological speed and helps reduce fragmentation caused by centroid noise or small detection instability.
+which is slightly above the expected biological speed.
+
+During linking, detections are connected only if they lie within this search radius. Candidate detections are identified efficiently using a cKDTree (scipy.spatial.cKDTree), which avoids comparing every detection with every active track.
+
+When multiple candidates satisfy the distance criterion, they are ranked using a score that combines distance and directional persistence (DP). Distance remains the primary criterion, while DP provides a small preference for candidates that continue the previous direction of motion.
+
+This conservative strategy reduces track fragmentation while minimizing incorrect trajectory connections.
 
 
-4. Directional persistence / step-alignment score
-------------------------------------
+4. Step-alignment score
+-----------------------
 
-The function calculate_step_alignment(p0, p1, p2) measures how well a candidate next step preserves the previous direction of motion.
+The function calculate_step_alignment(p0, p1, p2) evaluates how well a candidate detection continues the recent direction of motion of an existing track.
 
-It compares two displacement vectors:
+It compares two consecutive displacement vectors:
 
 v1 = p1 - p0
 v2 = p2 - p1
 
+and computes:
+
 DP = dot(v1, v2) / (|v1| |v2|)
 
-This is the cosine of the turning angle between two consecutive steps.
+This quantity is the cosine of the turning angle between the two displacement vectors.
 
-DP close to 1 means the candidate continues in nearly the same direction.
-DP close to 0 means the candidate requires an approximately perpendicular turn.
-DP close to -1 means the candidate reverses direction.
+Interpretation:
 
-This is not a full velocity autocorrelation function. It is a local directional-alignment score used only for track linking.
+- DP close to 1 indicates that the candidate continues in nearly the same direction.
+- DP close to 0 indicates an approximately perpendicular change in direction.
+- DP close to -1 indicates a reversal of direction.
 
-DP needs three positions:
+Because the displacement vectors are normalized, DP depends only on directional similarity and is independent of the magnitude of the displacements.
 
-p0 -> p1 -> p2
+This quantity is not a full velocity autocorrelation function. Instead, it is a local directional-alignment score used to rank competing candidate links during trajectory reconstruction.
 
-Therefore, the first link of a new track cannot have a DP score yet.
+The calculation requires three positions:
+
+p0 → p1 → p2
+
+Therefore, DP can only be evaluated once a track contains at least two detections. Newly created tracks initially have no directional history and are linked using distance alone.
 
 
 5. Frame-to-frame tracking logic
 --------------------------------
 
-The notebook starts by assigning one new track to each detection in the first frame.
+Tracking begins by assigning a unique track ID to every detection in the first frame.
 
-Then it processes the video frame by frame.
+The video is then processed frame by frame.
 
-For each current frame:
+For each frame:
 
-1. A cKDTree is built from current-frame detection positions.
-2. For every active track, the last detection is used as the current endpoint.
-3. The cKDTree finds only candidate detections within max_distance_um.
-4. Each candidate link stores:
+1. A cKDTree (scipy.spatial.cKDTree) is built from the detection positions in the current frame.
+2. For every active track, the most recent detection is used as the current track endpoint.
+3. The cKDTree identifies all candidate detections within the search radius max_distance_um.
+4. For each candidate, the following quantities are calculated:
    - track_id
    - detection_a
    - detection_b
@@ -136,22 +149,26 @@ For each current frame:
    - frame_b
    - distance_um
    - DP
-5. Candidate links are scored.
-6. The best non-conflicting links are accepted.
-7. Unassigned detections start new tracks.
+   - score
+5. All candidate links are collected and ranked by score.
+6. Candidate links are processed from best to worst score.
+7. A candidate link is accepted only if neither the track nor the detection has already been assigned during the current frame.
+8. Accepted links extend existing tracks.
+9. Any remaining unassigned detections start new tracks.
 
-The score used is:
+The candidate score is defined as:
 
-score = distance_um - DP_weight_um * DP
+score = distance_um - DP_weight_um × DP
 
-The current value is:
+with
 
 DP_weight_um = 0.25
 
-This means Distance is the main criterion. DP gives a small bonus to candidates that preserve the previous direction.
+Distance is therefore the primary linking criterion, while DP provides a small preference for candidates that preserve the recent direction of motion.
 
-This is conservative. DP helps choose between nearby candidates but should not overpower distance.
+This weighting is intentionally conservative. DP is used to resolve ambiguities between nearby candidates, but it is not strong enough to override large differences in distance.
 
+Using a cKDTree restricts the search to nearby detections and substantially reduces the computational cost compared with comparing every track against every detection in the frame.
 
 6. Why cKDTree is used
 ----------------------
