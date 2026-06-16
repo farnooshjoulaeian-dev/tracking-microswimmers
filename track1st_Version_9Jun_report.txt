@@ -6,14 +6,14 @@ Date: 9 June version
 1. Goal of the notebook
 -----------------------
 
-The goal of this notebook is to build a transparent first tracking pipeline for cells detected in a short video.
+The goal of this notebook is to build a transparent first tracking pipeline for cells detected in a video.
 
 The pipeline does four main things:
 
 1. Detect cells in each video frame.
 2. Link detections frame-to-frame to create tracks.
-3. Use velocity autocorrelation (VAC) to prefer smooth directional motion.
-4. Detect and merge broken track segments using jump detection.
+3. Use direction persistency (DP) to avoid radical directional change in trajectory.
+4. Detect jumps in tracks and filtering by speed and distance of the jump and merge broken track segments using jump detection.
 
 The notebook keeps the process scientifically transparent by storing intermediate tables:
 
@@ -89,33 +89,31 @@ This corresponds to:
 This is an empirical tolerance. It is slightly above the expected biological speed and helps reduce fragmentation caused by centroid noise or small detection instability.
 
 
-4. Velocity autocorrelation function
+4. Directional persistence / step-alignment score
 ------------------------------------
 
-The notebook defines calculate_vac(p0, p1, p2).
+The function calculate_step_alignment(p0, p1, p2) measures how well a candidate next step preserves the previous direction of motion.
 
-This function compares two consecutive movement vectors:
+It compares two displacement vectors:
 
 v1 = p1 - p0
 v2 = p2 - p1
 
-The velocity autocorrelation is:
+DP = dot(v1, v2) / (|v1| |v2|)
 
-VAC = dot(v1, v2) / (|v1| * |v2|)
+This is the cosine of the turning angle between two consecutive steps.
 
-Interpretation:
+DP close to 1 means the candidate continues in nearly the same direction.
+DP close to 0 means the candidate requires an approximately perpendicular turn.
+DP close to -1 means the candidate reverses direction.
 
-- VAC close to 1: movement continues in the same direction
-- VAC close to 0: movement direction is unrelated or perpendicular
-- VAC close to -1: movement reverses direction
+This is not a full velocity autocorrelation function. It is a local directional-alignment score used only for track linking.
 
-The normalization is important because it removes speed magnitude and keeps direction similarity. This means VAC measures directional consistency, not how fast the cell moved.
-
-VAC needs three positions:
+DP needs three positions:
 
 p0 -> p1 -> p2
 
-Therefore, the first link of a new track cannot have a VAC score yet.
+Therefore, the first link of a new track cannot have a DP score yet.
 
 
 5. Frame-to-frame tracking logic
@@ -137,22 +135,22 @@ For each current frame:
    - frame_a
    - frame_b
    - distance_um
-   - vac
+   - DP
 5. Candidate links are scored.
 6. The best non-conflicting links are accepted.
 7. Unassigned detections start new tracks.
 
 The score used is:
 
-score = distance_um - vac_weight_um * vac
+score = distance_um - DP_weight_um * DP
 
 The current value is:
 
-vac_weight_um = 0.25
+DP_weight_um = 0.25
 
-This means distance remains the main factor, and VAC gives a small bonus for directionally smooth candidates.
+This means Distance is the main criterion. DP gives a small bonus to candidates that preserve the previous direction.
 
-This is conservative. VAC helps choose between nearby candidates but should not overpower distance.
+This is conservative. DP helps choose between nearby candidates but should not overpower distance.
 
 
 6. Why cKDTree is used
@@ -186,7 +184,7 @@ This shows how close accepted links are to max_distance_um.
 
 If many links pile up near the maximum, the distance threshold is strongly controlling the result.
 
-3. VAC distribution
+3. DP distribution
 
 This shows whether accepted links are directionally smooth.
 
@@ -200,7 +198,7 @@ These are used for visual inspection. They show whether long tracks look smooth,
 8. Current tracking result before merging
 -----------------------------------------
 
-The frame-to-frame VAC-based tracker produced many usable tracks, including long tracks near the full video length.
+The frame-to-frame DP-based tracker produced many usable tracks, including long tracks near the full video length.
 
 However, visual inspection showed that some real trajectories were split into separate track segments.
 
@@ -241,14 +239,14 @@ The code calculates:
 jmp_frames = start_frame_B - end_frame_A
 jmp_distance_um = distance from end of A to start of B
 jmp_speed_um_s = jmp_distance_um / jmp_frames * fps
-jmp_vac = direction consistency from the end of A toward the start of B
+jmp_DP = direction consistency from the end of A toward the start of B
 
 The current jump parameters are:
 
 max_jmp_frames = 3
 max_jmp_speed_um_s = 130
 max_jmp_distance_um = max_jmp_speed_um_s * max_jmp_frames / fps
-min_jmp_vac = 0.5
+min_jmp_DP = 0.5
 min_segment_length = 20
 
 The dynamic distance rule is important:
@@ -271,7 +269,7 @@ The notebook filters candidate jumps by:
 
 - jump duration
 - jump speed
-- jump VAC
+- jump DP
 - minimum length of both track segments
 
 The selected links are stored in:
@@ -392,12 +390,12 @@ It calculates:
 jmp_frames
 jmp_distance_um
 jmp_speed_um_s
-jmp_vac
+jmp_DP
 
 Decision rule:
 
 - If tracks overlap in time, usually do not merge.
-- If they do not overlap, merge only if jump duration, speed, distance, and VAC are reasonable.
+- If they do not overlap, merge only if jump duration, speed, distance, and DP are reasonable.
 
 
 14. Important current issues to clean later
@@ -431,7 +429,7 @@ max_jmp_distance_um = max_jmp_speed_um_s * max_jmp_frames / fps
 
 6. Longer jumps must always be inspected visually.
 
-Increasing max_jmp_frames or lowering min_jmp_vac can repair more tracks, but it also increases the risk of wrong merges.
+Increasing max_jmp_frames or lowering min_jmp_DP can repair more tracks, but it also increases the risk of wrong merges.
 
 
 15. Recommended next steps
@@ -445,7 +443,7 @@ Do not move to a longer video until the current pipeline is validated.
 
 This checks whether the final merged tracks contain biologically impossible jumps.
 
-3. Recalculate VAC on tracks_merged.
+3. Recalculate DP on tracks_merged.
 
 This checks whether final trajectories remain directionally consistent.
 
@@ -477,7 +475,7 @@ A longer video will increase runtime and make debugging harder, so it should com
 This notebook now contains a first transparent tracking method:
 
 - cells are detected frame by frame
-- detections are linked using distance and velocity autocorrelation
+- detections are linked using distance and local directional persistence.
 - cKDTree makes candidate search faster
 - broken tracks are detected using endpoint jumps
 - selected broken segments are merged conservatively
