@@ -9,6 +9,7 @@ dependencies = [
     "opencv-python",
     "matplotlib",
     "scikit-image",
+    "scipy",
 ] #means the project depends on these Python packages.
 
 [tool.setuptools.packages.find]
@@ -17,5 +18,4 @@ where = ["src"]
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
-
 
