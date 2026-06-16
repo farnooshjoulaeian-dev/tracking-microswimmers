@@ -1,4 +1,4 @@
-#pyproject.toml is useful because later someone can install your package with: pip install -e 
+#pyproject.toml to install the package with: pip install -e 
 [project]
 name = "trackfar"
 version = "0.1.0"
