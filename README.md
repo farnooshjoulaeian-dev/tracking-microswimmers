@@ -16,7 +16,7 @@ The goal is to build a reproducible pipeline for:
 
 ## Current stage
 
-Project structure and video loading.
+Core pipeline implemented; active development ongoing.
 
 ## Example data
 
