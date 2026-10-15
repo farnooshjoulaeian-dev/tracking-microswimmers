@@ -1,0 +1,18 @@
+Verification after steps 1–6
+
+- All code cells parse successfully; git diff --check passes.
+- Existing notebook outputs and metadata are preserved.
+- Actual UN_test2.mp4 first-frame masks and numerical detections match the
+  baseline exactly after mapping the two renamed axis-length columns.
+- Synthetic consecutive-frame linking and gap merging produce identical
+  baseline and edited tables, including selected merges.
+- Empty detection tables retain their columns.
+- Orientation inspection handles 0, 1, or 3 available detections.
+- No-link and no-candidate cases complete the automatic tracking/merging stages.
+- No-detection tracking stops with an explicit message.
+- Diagnostic and optional inspection cells run without previous kernel state
+  when supplied fresh synthetic tracking results.
+- Full 768-frame processing, manual corrections, and video exports were not rerun.
+
+Only tracking_microswimmers_pipeline.ipynb and docs/pipeline_notes.md were edited
+by this cleanup; pre-existing pyproject.toml edits were left unchanged.

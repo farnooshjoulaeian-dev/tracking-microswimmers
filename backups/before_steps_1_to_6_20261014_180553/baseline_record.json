@@ -1,0 +1,67 @@
+{
+  "notebook_sha256": "40929a9d966ddd53a2438c098ce633f01d32f01b4eabfa72a8b78ded3eec7135",
+  "description": "Snapshot of existing notebook and saved outputs; not a new execution.",
+  "git_status": " M docs/pipeline_notes.md\n M pyproject.toml\n M tracking_microswimmers_pipeline.ipynb\n?? backups/\n",
+  "saved_stream_outputs": [
+    {
+      "cell": 6,
+      "text": "Original: 1920 \u00d7 1080\nTest: 1920 \u00d7 1080\n"
+    },
+    {
+      "cell": 8,
+      "text": "Finished processing in 695.6 s\n"
+    },
+    {
+      "cell": 20,
+      "text": "Instantaneous velocity summary, um/s:\ncount    196055.000000\nmean         86.992467\nstd          36.832644\nmin           0.000000\n25%          79.196947\n50%          97.498690\n75%         110.977841\nmax         139.999533\nName: instant_velocity_um_s, dtype: float64\n\nVelocity percentiles, um/s:\n0.50     97.498690\n0.75    110.977841\n0.90    121.653067\n0.95    127.581425\n0.99    136.150581\nName: instant_velocity_um_s, dtype: float64\n\nEquivalent displacement per frame, um/frame:\n0.50    3.899948\n0.75    4.439114\n0.90    4.866123\n0.95    5.103257\n0.99    5.446023\nName: instant_velocity_um_s, dtype: float64\n"
+    },
+    {
+      "cell": 22,
+      "text": "Number of initial tracks: 8127\nLongest initial track length: 768\nShortest track in this plot: 162\n"
+    },
+    {
+      "cell": 27,
+      "text": "Number of candidate jumps: 584\n"
+    },
+    {
+      "cell": 28,
+      "text": "Candidate jumps before DP: 584\nCandidate jumps with DP: 584\n"
+    },
+    {
+      "cell": 31,
+      "text": "Strong jump candidates: 301\n"
+    },
+    {
+      "cell": 39,
+      "text": "Detections before: 204182\nDetections after: 204182\nTracks before: 8127\nTracks after: 7830\nRows whose track_id changed:\n24412\n\nBefore merging:\ncount    8127.000000\nmean       25.123908\nstd        49.404176\nmin         1.000000\n25%         2.000000\n50%         5.000000\n75%        26.000000\nmax       768.000000\ndtype: float64\n\nAfter merging:\ncount    7830.000000\nmean       26.076884\nstd        54.787838\nmin         1.000000\n25%         2.000000\n50%         5.000000\n75%        22.000000\nmax       768.000000\ndtype: float64\n"
+    },
+    {
+      "cell": 43,
+      "text": "Number of merged tracks: 7830\nLongest merged track length: 768\nShortest track in this plot: 302\n"
+    },
+    {
+      "cell": 46,
+      "text": "A frames: 0 to 240\nB frames: 135 to 142\nNumber of overlapping frames: 8\nOverlap distance summary:\ncount       8.000000\nmean     1329.449133\nstd         2.299619\nmin      1324.463142\n25%      1328.899378\n50%      1329.856429\n75%      1330.701094\nmax      1331.953926\nName: distance_um, dtype: float64\n"
+    },
+    {
+      "cell": 48,
+      "text": "tracks columns:\n['frame', 'label', 'y_px', 'x_px', 'y_um', 'x_um', 'area_px', 'area_um2', 'mean_intensity', 'threshold_value', 'eccentricity_value', 'orientation_value', 'axis_major_length', 'axis_minor_length', 'track_id']\ntracks_merged columns:\n['frame', 'label', 'y_px', 'x_px', 'y_um', 'x_um', 'area_px', 'area_um2', 'mean_intensity', 'threshold_value', 'eccentricity_value', 'orientation_value', 'axis_major_length', 'axis_minor_length', 'track_id', 'original_track_id']\nGood: original_track_id exists.\nManual inspection can use original IDs.\nNumber of original track IDs:\n3214\nNumber of merged track IDs:\n3160\n"
+    },
+    {
+      "cell": 49,
+      "text": "Selected jump links: 54\nRows before: 66134\nRows after: 66134\nTracks before: 3214\nTracks after: 3160\nRows whose track_id changed:\n3466\n"
+    },
+    {
+      "cell": 53,
+      "text": "Number of selected tracks: 580\nNumber of selected detections: 106877\nSaved overlay video to: tracks_merged_overlay_hung.mp4\n"
+    },
+    {
+      "cell": 58,
+      "text": "Tracks before manual correction: 7830\nTracks after manual correction: 7823\nRows changed by manual correction:\n836\n"
+    },
+    {
+      "cell": 59,
+      "text": "Number of selected tracks: 574\nNumber of selected detections: 106866\nSaved corrected overlay video to: tracks_corrected.mp4\n"
+    }
+  ]
+}

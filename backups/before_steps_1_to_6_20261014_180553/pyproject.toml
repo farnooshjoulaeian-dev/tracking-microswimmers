@@ -1,0 +1,22 @@
+#pyproject.toml to install the package with: pip install -e 
+[project]
+name = "trackfar"
+version = "0.1.0"
+description = "Python tools for tracking Chlamydomonas cells in microscopy videos."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "opencv-python",
+    "matplotlib",
+    "scikit-image",
+    "scipy",
+] #means the project depends on these Python packages.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+

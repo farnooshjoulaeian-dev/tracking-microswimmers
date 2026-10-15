@@ -6,6 +6,7 @@ description = "Python tools for tracking Chlamydomonas cells in microscopy video
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
+    "pandas",
     "opencv-python",
     "matplotlib",
     "scikit-image",
